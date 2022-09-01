@@ -12,8 +12,12 @@ import re
 from xlutils.copy import copy
 import json
 import urllib3
+import threading
+import time
 
 urllib3.disable_warnings()
+
+
 # sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='gbk')
 
 
@@ -38,12 +42,14 @@ def get_config():
         config = f.read()
     return config
 
+
 def log(msg):
     # 追加日志文件
     # sys.stdout.flush()
     print(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ' ' + msg + '\n')
     with open('log.txt', 'a') as f:
         f.write(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ' ' + msg + '\n')
+
 
 def get_ip2():
     html = requests.get(
@@ -159,17 +165,19 @@ def diff_list(excelData, list):
     rData = {
         "统一社会信用代码": '',
         "结果": '',
-        "企查查-公司名称": ''
+        "企查查-公司名称": '',
+        "企查查-法人": ''
     }
     bool = False
     for i, data in enumerate(list):
+        log("爬到的数据:" + str(i) + "、" + str(data))
         gsmc = data['Name'].strip()
         # 截取内容到括号前
         if gsmc.find("（") != -1:
             gsmc_l = gsmc[:gsmc.find("（")].strip()
             # print("gsmc_l")
             # print(gsmc_l)
-        fr = data['OperName'].replace("负责人：", "").strip()
+        fr = data['OperName'].replace("负责人：", "").replace("法定代表人：", "").strip()
         code = data['CreditCode'].replace("统一社会信用代码：", "").strip()
         # print(data)
         if gsName == gsmc and gsCreditCode == code and gsfr == fr:
@@ -214,6 +222,7 @@ def diff_list(excelData, list):
 
     rData['统一社会信用代码'] = list[0]['CreditCode'].replace("统一社会信用代码：", "")
     rData['企查查-公司名称'] = list[0]['Name']
+    rData['企查查-法人'] = list[0]['OperName'].replace("负责人：", "").replace("法定代表人：", "").strip()
     rData['结果'] = list[0]['结果']
     return rData
 
@@ -223,6 +232,60 @@ def insert_excel(data, row, col, wb):
     ws.write(row, col, data)
 
 
+# 创建一个线程任务
+def thread_task(i, data, wb, proxies):
+    log('第' + str(i) + '条数据:' + data[5] + '----' + data[8])
+    Name = data[5]
+    newName = data[5]
+    CreditCode = data[8]
+    excelfr = data[14]
+
+    excelData = {
+        "Name": Name,
+        "CreditCode": CreditCode,
+        "excelfr": excelfr,
+    }
+
+    Name = Name.encode('gbk').decode('gbk')
+    bool = True
+    count = 0
+    while bool:
+        # str1 = get_html("https://www.qcc.com/web/search?key=" + Name + "&isTable=true", proxies)
+        # resultList = get_data(str1)
+        # rdata = diff_list(excelData, resultList)
+        # print("----------------------------------------------------")
+        # print(rdata)
+        # print(i, rdata['统一社会信用代码'], rdata['结果'])
+        # print("----------------------------------------------------")
+        # insert_excel(rdata['统一社会信用代码'], i, 9, wb)
+        # insert_excel(rdata['结果'], i, 10, wb)
+        # wb.save(fileName)
+        # bool = False
+        try:
+            str1 = get_html("https://www.qcc.com/web/search?key=" + Name + "&isTable=true", proxies)
+            resultList = get_data(str1)
+            rdata = diff_list(excelData, resultList)
+            # print(rdata)
+            log("结果：" + str(rdata))
+            insert_excel(rdata['统一社会信用代码'], i, 9, wb)
+            insert_excel(rdata['企查查-公司名称'], i, 10, wb)
+            insert_excel(rdata['企查查-法人'], i, 11, wb)
+            insert_excel(rdata['结果'], i, 12, wb)
+            insert_excel("https://www.qcc.com/web/search?key=" + newName + "&isTable=true", i, 13, wb)
+            bool = False
+        except Exception as e:
+            print(e)
+            count += 1
+            proxies = get_ip(proxyUrl)
+            bool = True
+            if count > 10:
+                bool = False
+
+
+            # if str(e) == 'substring not found':
+            #     bool = False
+
+
 if __name__ == '__main__':
     config = get_config()
     jsonCon = eval(config)
@@ -230,72 +293,89 @@ if __name__ == '__main__':
     proxyUrl = jsonCon['dailiurl']
     start = jsonCon['start']
     end = jsonCon['end']
+    threadNumber = jsonCon['threadNumber']
     proxyNumber = jsonCon['proxyNumber']
-
 
     log("初始化配置文件")
     log("文件名称：" + fileName)
     log("代理地址：" + proxyUrl)
     log("开始行数：" + start)
     log("结束行数：" + end)
-    log("设置代理数量：" +proxyNumber)
+    log("设置代理数量：" + proxyNumber)
+    log("设置线程数量：" + threadNumber)
     proxies = get_ip(proxyUrl)
-
 
     datas = read_excel(fileName)
     rb = xlrd.open_workbook(fileName)
     wb = copy(rb)
     # 获取sheet的行数
     row = rb.sheets()[0].nrows - 1
-
+    tlist = list()
     for i, data in enumerate(datas):
         if int(end) > 0:
             if i > int(end):
                 continue
-
         if i < int(start):
             continue
+
         if i % int(proxyNumber) == 0:
             proxies = get_ip(proxyUrl)
-        log('第' + str(i) + '条数据:' + data[5] + '----' + data[8])
-        Name = data[5]
-        CreditCode = data[8]
-        excelfr = data[11]
 
-        excelData = {
-            "Name": Name,
-            "CreditCode": CreditCode,
-            "excelfr": excelfr,
-        }
+        t = threading.Thread(target=thread_task, args=(i, data, wb, proxies))
+        tlist.append(t)
 
-        Name = Name.encode('gbk').decode('gbk')
-        bool = True
-        while bool:
-            # str1 = get_html("https://www.qcc.com/web/search?key=" + Name + "&isTable=true", proxies)
-            # resultList = get_data(str1)
-            # rdata = diff_list(excelData, resultList)
-            # print("----------------------------------------------------")
-            # print(rdata)
-            # print(i, rdata['统一社会信用代码'], rdata['结果'])
-            # print("----------------------------------------------------")
-            # insert_excel(rdata['统一社会信用代码'], i, 9, wb)
-            # insert_excel(rdata['结果'], i, 10, wb)
-            # wb.save(fileName)
-            # bool = False
-            try:
-                str1 = get_html("https://www.qcc.com/web/search?key=" + Name + "&isTable=true", proxies)
-                resultList = get_data(str1)
-                rdata = diff_list(excelData, resultList)
-                # print(rdata)
-                log("结果："+ str(rdata))
-                insert_excel(rdata['统一社会信用代码'], i, 9, wb)
-                insert_excel(rdata['结果'], i, 10, wb)
-                wb.save(fileName)
-                bool = False
-            except Exception as e:
-                print(e)
-                proxies = get_ip(proxyUrl)
-                bool = True
-                # if str(e) == 'substring not found':
-                #     bool = False
-        print('\n')
+        if len(tlist) == int(threadNumber):
+            for t in tlist:
+                t.start()
+            for t in tlist:
+                t.join()
+            tlist.clear()
+            wb.save(fileName)
+            log("第" + str(i) + "条数据保存成功")
+
+        # log('第' + str(i) + '条数据:' + data[5] + '----' + data[8])
+        # Name = data[5]
+        # newName = data[5]
+        # CreditCode = data[8]
+        # excelfr = data[11]
+        #
+        # excelData = {
+        #     "Name": Name,
+        #     "CreditCode": CreditCode,
+        #     "excelfr": excelfr,
+        # }
+        #
+        # Name = Name.encode('gbk').decode('gbk')
+        # bool = True
+        # while bool:
+        #     # str1 = get_html("https://www.qcc.com/web/search?key=" + Name + "&isTable=true", proxies)
+        #     # resultList = get_data(str1)
+        #     # rdata = diff_list(excelData, resultList)
+        #     # print("----------------------------------------------------")
+        #     # print(rdata)
+        #     # print(i, rdata['统一社会信用代码'], rdata['结果'])
+        #     # print("----------------------------------------------------")
+        #     # insert_excel(rdata['统一社会信用代码'], i, 9, wb)
+        #     # insert_excel(rdata['结果'], i, 10, wb)
+        #     # wb.save(fileName)
+        #     # bool = False
+        #     try:
+        #         str1 = get_html("https://www.qcc.com/web/search?key=" + Name + "&isTable=true", proxies)
+        #         resultList = get_data(str1)
+        #         rdata = diff_list(excelData, resultList)
+        #         # print(rdata)
+        #         log("结果：" + str(rdata))
+        #         insert_excel(rdata['统一社会信用代码'], i, 9, wb)
+        #         insert_excel(rdata['企查查-公司名称'], i, 10, wb)
+        #         insert_excel(rdata['企查查-法人'], i, 11, wb)
+        #         insert_excel(rdata['结果'], i, 12, wb)
+        #         insert_excel("https://www.qcc.com/web/search?key=" + newName + "&isTable=true", i, 13, wb)
+        #         wb.save(fileName)
+        #         bool = False
+        #     except Exception as e:
+        #         print(e)
+        #         proxies = get_ip(proxyUrl)
+        #         bool = True
+        #         # if str(e) == 'substring not found':
+        #         #     bool = False
+        # print('\n')

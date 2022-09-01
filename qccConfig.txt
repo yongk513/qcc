@@ -1,7 +1,9 @@
 {
-    'dailiurl':'http://api.tianqiip.com/getip?secret=ihhitv806h93ala8&num=1&type=json&port=1&time=3&sign=ec88905b38d61d26e2733b26e15e3d3a',
+    'dailiurl':'http://api.tianqiip.com/getip?secret=wcof442p&num=1&type=json&port=1&sign=ec88905b38d61d26e2733b26e15e3d3a',
     'FileName': '01小宗实物任务单信息_20220829.xlsx',
-    'start': '1',
+    'start': '580',
     'end': '0',
     'proxyNumber': '10',
+    'threadNumber': '20',
+    'errorNumber': '10',
 }
