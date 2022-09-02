@@ -1,9 +1,10 @@
 {
-    'dailiurl':'http://api.tianqiip.com/getip?secret=wcof442p&num=1&type=json&port=1&sign=ec88905b38d61d26e2733b26e15e3d3a',
+    'dailiurl':'http://api.xdaili.cn/xdaili-api//greatRecharge/getGreatIp?spiderId=cd5e2270146c4f52aeed30106714f51f&orderno=YZ2019323679qWgyvL&returnType=2&count=20',
     'FileName': '01小宗实物任务单信息_20220829.xlsx',
-    'start': '580',
+    'start': '6000',
     'end': '0',
-    'proxyNumber': '10',
+    'proxyNumber': '20',
     'threadNumber': '20',
     'errorNumber': '10',
+    'proxyErrNumber': '10',
 }

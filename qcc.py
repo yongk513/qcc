@@ -16,6 +16,45 @@ import threading
 import time
 
 urllib3.disable_warnings()
+def get_config():
+    with open('qccConfig.txt', 'r') as f:
+        config = f.read()
+    return config
+# 线程锁
+lock = threading.Lock()
+
+proxy = []
+
+# 创建一个空子典
+proxies = {}
+
+config = get_config()
+jsonCon = eval(config)
+fileName = jsonCon['FileName']
+proxyUrl = jsonCon['dailiurl']
+start = jsonCon['start']
+end = jsonCon['end']
+threadNumber = jsonCon['threadNumber']
+proxyNumber = jsonCon['proxyNumber']
+proxyErrNumber = jsonCon['proxyErrNumber']
+errorNumber = jsonCon['errorNumber']
+
+
+
+
+# IP代理池调度
+def get_ip_pool():
+    global proxy
+    # 加锁
+    lock.acquire(blocking=True, timeout=5)
+    if len(proxy) <= 5:
+        get_xdlIp(proxyUrl)
+    if proxy[0]['count'] >= int(proxyErrNumber):
+        proxy.pop(0)
+    # 解锁
+    lock.release()
+    global proxies
+    proxies = proxy[0]
 
 
 # sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='gbk')
@@ -35,12 +74,6 @@ def read_excel(file_name):
         data.append(worksheet.row_values(row))
 
     return data
-
-
-def get_config():
-    with open('qccConfig.txt', 'r') as f:
-        config = f.read()
-    return config
 
 
 def log(msg):
@@ -68,26 +101,58 @@ def get_ip2():
         "http": proxyMeta,
         "https": proxyMeta
     }
+
     return proxies
 
 
-def get_ip(url):
-    html = requests.get(url)
-    log("获取代理IP：" + html.text)
-    html.encoding = 'utf-8'
-    html = html.text
-    html = json.loads(html)
-    proxyHost = html['data'][0]['ip']
-    proxyPort = html['data'][0]['port']
-    proxyMeta = "http://%(host)s:%(port)s" % {
-        "host": proxyHost,
-        "port": proxyPort,
-    }
-    proxies = {
-        "http": proxyMeta,
-        "https": proxyMeta
-    }
+def get_xdlIp(url):
+    bools = True
+    while bools:
+        html = requests.get(url)
+        log("获取代理IP：" + html.text)
+        html.encoding = 'utf-8'
+        html = html.text
+        html = json.loads(html)
+        errorCode = html['ERRORCODE']
+        if errorCode == '0':
+            bools = False
+            for i in html['RESULT']:
+                proxyHost = i['ip']
+                proxyPort = i['port']
+                proxyMeta = "http://%(host)s:%(port)s" % {
+                    "host": proxyHost,
+                    "port": proxyPort,
+                }
+                proxies = {
+                    "http": proxyMeta,
+                    "https": proxyMeta,
+                    "count": 0,
+                    "use": 0
+                }
+                proxy.append(proxies)
+        else:
+            time.sleep(1)
+
     return proxies
+
+
+# def get_ip(url):
+#     html = requests.get(url)
+#     log("获取代理IP：" + html.text)
+#     html.encoding = 'utf-8'
+#     html = html.text
+#     html = json.loads(html)
+#     proxyHost = html['data'][0]['ip']
+#     proxyPort = html['data'][0]['port']
+#     proxyMeta = "http://%(host)s:%(port)s" % {
+#         "host": proxyHost,
+#         "port": proxyPort,
+#     }
+#     proxies = {
+#         "http": proxyMeta,
+#         "https": proxyMeta
+#     }
+#     return proxies
 
 
 def GetMiddleStr(content, startStr, endStr):
@@ -109,7 +174,7 @@ def get_html(url, proxies1):
         # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
         'cookie': 'qcc_did=e0a42459-48ba-4c68-8eae-6614464f98f2',
     }
-    log("代理IP：" + str(proxies1))
+    # log("代理IP：" + str(proxies1))
     # s = requests.session()
     # s.keep_alive = False
     # requests.DEFAULT_RETRIES = 5
@@ -170,7 +235,7 @@ def diff_list(excelData, list):
     }
     bool = False
     for i, data in enumerate(list):
-        log("爬到的数据:" + str(i) + "、" + str(data))
+        # log("爬到的数据:" + str(i) + "、" + str(data))
         gsmc = data['Name'].strip()
         # 截取内容到括号前
         if gsmc.find("（") != -1:
@@ -233,7 +298,7 @@ def insert_excel(data, row, col, wb):
 
 
 # 创建一个线程任务
-def thread_task(i, data, wb, proxies):
+def thread_task(i, data, wb):
     log('第' + str(i) + '条数据:' + data[5] + '----' + data[8])
     Name = data[5]
     newName = data[5]
@@ -250,6 +315,8 @@ def thread_task(i, data, wb, proxies):
     bool = True
     count = 0
     while bool:
+        get_ip_pool()
+        # log("代理池IP数量：" + str(len(proxy)))
         # str1 = get_html("https://www.qcc.com/web/search?key=" + Name + "&isTable=true", proxies)
         # resultList = get_data(str1)
         # rdata = diff_list(excelData, resultList)
@@ -262,6 +329,7 @@ def thread_task(i, data, wb, proxies):
         # wb.save(fileName)
         # bool = False
         try:
+            proxy[0]['use'] += 1
             str1 = get_html("https://www.qcc.com/web/search?key=" + Name + "&isTable=true", proxies)
             resultList = get_data(str1)
             rdata = diff_list(excelData, resultList)
@@ -272,29 +340,30 @@ def thread_task(i, data, wb, proxies):
             insert_excel(rdata['企查查-法人'], i, 11, wb)
             insert_excel(rdata['结果'], i, 12, wb)
             insert_excel("https://www.qcc.com/web/search?key=" + newName + "&isTable=true", i, 13, wb)
+            # lock.acquire()
+
+            log("代理池IP数量：" + str(len(proxy)) + "---- 正在使用：" + proxy[0]['http'] + "---- 使用次数" + str(
+                proxy[0]['use']) + "---- 错误次数：" + str(proxy[0]['count']))
+            proxy[0]['count'] = 0
+            # lock.release()
             bool = False
         except Exception as e:
-            print(e)
+            # 加锁
+            # lock.acquire()
+            proxy[0]['count'] += 1
+            log("代理池IP数量：" + str(len(proxy)) + "---- 正在使用：" + proxy[0]['http'] + "---- 使用次数" + str(
+                proxy[0]['use']) + "---- 错误次数：" + str(proxy[0]['count']))
+            # print("失败次数：" + str(count))
             count += 1
-            proxies = get_ip(proxyUrl)
             bool = True
-            if count > 10:
+            if count >= int(errorNumber):
                 bool = False
-
-
             # if str(e) == 'substring not found':
             #     bool = False
 
 
+proxy_i = 0
 if __name__ == '__main__':
-    config = get_config()
-    jsonCon = eval(config)
-    fileName = jsonCon['FileName']
-    proxyUrl = jsonCon['dailiurl']
-    start = jsonCon['start']
-    end = jsonCon['end']
-    threadNumber = jsonCon['threadNumber']
-    proxyNumber = jsonCon['proxyNumber']
 
     log("初始化配置文件")
     log("文件名称：" + fileName)
@@ -303,7 +372,11 @@ if __name__ == '__main__':
     log("结束行数：" + end)
     log("设置代理数量：" + proxyNumber)
     log("设置线程数量：" + threadNumber)
-    proxies = get_ip(proxyUrl)
+    log("错误跳过次数：" + errorNumber)
+    log("IP错误换IP次数" + proxyErrNumber)
+
+
+
 
     datas = read_excel(fileName)
     rb = xlrd.open_workbook(fileName)
@@ -318,10 +391,14 @@ if __name__ == '__main__':
         if i < int(start):
             continue
 
-        if i % int(proxyNumber) == 0:
-            proxies = get_ip(proxyUrl)
+        if i % 100 == 0:
+            log("第" + start + "-" + str(i) + "条数据保存成功")
+        #     proxy.pop(0)
+        #
+        # if len(proxy) <= 5:
+        #     get_xdlIp(proxyUrl)
 
-        t = threading.Thread(target=thread_task, args=(i, data, wb, proxies))
+        t = threading.Thread(target=thread_task, args=(i, data, wb))
         tlist.append(t)
 
         if len(tlist) == int(threadNumber):
@@ -331,7 +408,6 @@ if __name__ == '__main__':
                 t.join()
             tlist.clear()
             wb.save(fileName)
-            log("第" + str(i) + "条数据保存成功")
 
         # log('第' + str(i) + '条数据:' + data[5] + '----' + data[8])
         # Name = data[5]
