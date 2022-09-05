@@ -1,14 +1,9 @@
 # coding:utf-8
-import io
-import sys
-import datetime
-from time import sleep
 
+import datetime
 import requests
 import xlrd
 from bs4 import BeautifulSoup
-from lxml import etree
-import re
 from xlutils.copy import copy
 import json
 import urllib3
@@ -16,10 +11,13 @@ import threading
 import time
 
 urllib3.disable_warnings()
+
 def get_config():
     with open('qccConfig.txt', 'r') as f:
         config = f.read()
     return config
+
+
 # 线程锁
 lock = threading.Lock()
 
@@ -38,8 +36,6 @@ threadNumber = jsonCon['threadNumber']
 proxyNumber = jsonCon['proxyNumber']
 proxyErrNumber = jsonCon['proxyErrNumber']
 errorNumber = jsonCon['errorNumber']
-
-
 
 
 # IP代理池调度
@@ -83,26 +79,6 @@ def log(msg):
     with open('log.txt', 'a') as f:
         f.write(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ' ' + msg + '\n')
 
-
-def get_ip2():
-    html = requests.get(
-        "http://api.wandoudl.com/api/ip?app_key=3598ef63bcfe59c2f4b56a722880a946&pack=0&num=1&xy=1&type=2&lb=\r\n&nr=1&area_id=0")
-    html.encoding = 'utf-8'
-    html = html.text.encode('utf-8').decode('unicode_escape')
-    print(html)
-    html = json.loads(html)
-    proxyHost = html['data'][0]['ip']
-    proxyPort = html['data'][0]['port']
-    proxyMeta = "http://%(host)s:%(port)s" % {
-        "host": proxyHost,
-        "port": proxyPort,
-    }
-    proxies = {
-        "http": proxyMeta,
-        "https": proxyMeta
-    }
-
-    return proxies
 
 
 def get_xdlIp(url):
@@ -165,29 +141,18 @@ def GetMiddleStr(content, startStr, endStr):
         else:
             return ''
 
-
 def get_html(url, proxies1):
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:104.0) Gecko/20100101 Firefox/104.0',
-        # 'accept-encoding': 'gzip, deflate, br',
-        # 'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        # 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
         'cookie': 'qcc_did=e0a42459-48ba-4c68-8eae-6614464f98f2',
     }
     # log("代理IP：" + str(proxies1))
-    # s = requests.session()
-    # s.keep_alive = False
-    # requests.DEFAULT_RETRIES = 5
     html = requests.get(url, headers=headers, proxies=proxies1)
     html.encoding = 'utf-8'
-    # print(html.text)
     return html.text
 
 
 def get_data(html):
-    # html = etree.HTML(html)
-    # html = html.xpath('/html/body/div/div[2]/div[2]/div[3]/div/div[2]/div/table/tr')
-    # print(html)
     list = []
     soup = BeautifulSoup(html, 'lxml')
     title = soup.select("table")
@@ -314,52 +279,37 @@ def thread_task(i, data, wb):
     Name = Name.encode('gbk').decode('gbk')
     bool = True
     count = 0
+
     while bool:
         get_ip_pool()
-        # log("代理池IP数量：" + str(len(proxy)))
-        # str1 = get_html("https://www.qcc.com/web/search?key=" + Name + "&isTable=true", proxies)
-        # resultList = get_data(str1)
-        # rdata = diff_list(excelData, resultList)
-        # print("----------------------------------------------------")
-        # print(rdata)
-        # print(i, rdata['统一社会信用代码'], rdata['结果'])
-        # print("----------------------------------------------------")
-        # insert_excel(rdata['统一社会信用代码'], i, 9, wb)
-        # insert_excel(rdata['结果'], i, 10, wb)
-        # wb.save(fileName)
-        # bool = False
         try:
             proxy[0]['use'] += 1
             str1 = get_html("https://www.qcc.com/web/search?key=" + Name + "&isTable=true", proxies)
             resultList = get_data(str1)
             rdata = diff_list(excelData, resultList)
-            # print(rdata)
+
             log("结果：" + str(rdata))
+
             insert_excel(rdata['统一社会信用代码'], i, 9, wb)
             insert_excel(rdata['企查查-公司名称'], i, 10, wb)
             insert_excel(rdata['企查查-法人'], i, 11, wb)
             insert_excel(rdata['结果'], i, 12, wb)
             insert_excel("https://www.qcc.com/web/search?key=" + newName + "&isTable=true", i, 13, wb)
-            # lock.acquire()
 
-            log("代理池IP数量：" + str(len(proxy)) + "---- 正在使用：" + proxy[0]['http'] + "---- 使用次数" + str(
-                proxy[0]['use']) + "---- 错误次数：" + str(proxy[0]['count']))
+            log("代理池IP数量：" + str(len(proxy)) + " ---- 正在使用：" + proxy[0]['http'] + " ---- 使用次数" + str(
+                proxy[0]['use']) + " ---- 错误次数：" + str(proxy[0]['count']))
             proxy[0]['count'] = 0
-            # lock.release()
+
             bool = False
         except Exception as e:
-            # 加锁
-            # lock.acquire()
             proxy[0]['count'] += 1
-            log("代理池IP数量：" + str(len(proxy)) + "---- 正在使用：" + proxy[0]['http'] + "---- 使用次数" + str(
-                proxy[0]['use']) + "---- 错误次数：" + str(proxy[0]['count']))
+            log("代理池IP数量：" + str(len(proxy)) + " ---- 正在使用：" + proxy[0]['http'] + " ---- 使用次数" + str(
+                proxy[0]['use']) + " ---- 错误次数：" + str(proxy[0]['count']))
             # print("失败次数：" + str(count))
             count += 1
             bool = True
             if count >= int(errorNumber):
                 bool = False
-            # if str(e) == 'substring not found':
-            #     bool = False
 
 
 proxy_i = 0
@@ -375,9 +325,6 @@ if __name__ == '__main__':
     log("错误跳过次数：" + errorNumber)
     log("IP错误换IP次数" + proxyErrNumber)
 
-
-
-
     datas = read_excel(fileName)
     rb = xlrd.open_workbook(fileName)
     wb = copy(rb)
@@ -392,6 +339,7 @@ if __name__ == '__main__':
             continue
 
         if i % 100 == 0:
+            wb.save(fileName)
             log("第" + start + "-" + str(i) + "条数据保存成功")
         #     proxy.pop(0)
         #
@@ -407,7 +355,7 @@ if __name__ == '__main__':
             for t in tlist:
                 t.join()
             tlist.clear()
-            wb.save(fileName)
+
 
         # log('第' + str(i) + '条数据:' + data[5] + '----' + data[8])
         # Name = data[5]
