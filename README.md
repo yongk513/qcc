@@ -1,2 +1,8 @@
 # 爬爬爬爬爬
-q ...  ....  c ... ..  ... c
+```cmd
+pip install -r requirements.txt
+```
+# run project
+```cmd
+python qcc.py
+```
